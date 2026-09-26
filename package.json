@@ -1,0 +1,21 @@
+{
+  "name": "workslot",
+  "version": "0.1.0",
+  "description": "Permanent git worktree slots for parallel local development",
+  "type": "module",
+  "bin": {
+    "workslot": "./bin/workslot.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}
