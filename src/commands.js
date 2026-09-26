@@ -4,6 +4,7 @@ import { existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { installAgentInstructions } from "./agents.js";
 import { WorkslotError } from "./errors.js";
 import { git, tryFetch } from "./git.js";
 import { readRegistry, updateRegistry } from "./registry.js";
@@ -142,6 +143,11 @@ function planLines(plan) {
     lines.push(`  ${slot.path}  port ${slot.port}  (${state})`);
   }
   lines.push("It will copy untracked env files from the primary checkout into each new slot.");
+  if (plan.writeAgents) {
+    lines.push("It will add agent instructions to AGENTS.md and .cursor/rules/workslot.mdc.");
+  } else {
+    lines.push("It will leave AGENTS.md and .cursor/rules/workslot.mdc unchanged.");
+  }
   lines.push(`The primary checkout stays on ${plan.defaultBranch}.`);
   lines.push(`Dev command: ${plan.devCommand}  (${plan.portEnv})`);
   return lines;
@@ -221,6 +227,7 @@ function buildPlan(cwd, flags) {
     portEnv,
     defaultBranch,
     slots,
+    writeAgents: !flags["no-agents"],
   };
 }
 
@@ -273,6 +280,15 @@ export async function init(cwd, flags) {
   }
   console.log(`created: ${created}`);
   console.log(`copied env: ${copied.size ? [...copied].join(", ") : "none"}`);
+  if (plan.writeAgents) {
+    const agents = installAgentInstructions(plan.ctx.toplevel, plan);
+    const state = agents.changed ? "updated" : "unchanged";
+    console.log(`agents: ${state} ${agents.agentsPath}`);
+    console.log(`agents: ${state} ${agents.rulePath}`);
+    console.error("Commit AGENTS.md and .cursor/rules/workslot.mdc on the default branch so agents claim a slot before editing.");
+  } else {
+    console.log("agents: skipped");
+  }
   console.error("Claim a slot from this checkout with: workslot claim <branch>");
 }
 

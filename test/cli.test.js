@@ -76,6 +76,7 @@ test("init refuses a non-interactive run without --yes", async () => {
   assert.equal(result.status, 2, result.stderr);
   assert.match(result.stderr, /--yes/);
   assert.equal(existsSync(join(root, "st-1")), false);
+  assert.equal(existsSync(join(repo, "AGENTS.md")), false);
   assert.equal(branch(repo), "main");
 });
 
@@ -93,14 +94,56 @@ test("init creates sibling slots, copies env files, and leaves primary on main",
   assert.match(result.stdout, /port=4101/);
   assert.match(result.stdout, /port=4102/);
 
+  const agents = readFileSync(join(repo, "AGENTS.md"), "utf8");
+  assert.match(agents, /workslot claim/);
+  assert.match(agents, /`st-1`, `st-2`/);
+  assert.equal((agents.match(/workslot:start/g) || []).length, 1);
+  const rule = readFileSync(join(repo, ".cursor/rules/workslot.mdc"), "utf8");
+  assert.match(rule, /alwaysApply: true/);
+  assert.match(rule, /4101–4102/);
+  const slotStatus = execFileSync("git", ["status", "--porcelain"], {
+    cwd: join(root, "st-1"),
+    encoding: "utf8",
+  });
+  assert.doesNotMatch(slotStatus, /AGENTS\.md/);
+
   const again = await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "2"]);
   assert.equal(again.status, 0, again.stderr);
   assert.match(again.stdout, /created: 0/);
   assert.match(again.stdout, /copied env: none/);
+  assert.match(again.stdout, /agents: unchanged/);
+  assert.equal((readFileSync(join(repo, "AGENTS.md"), "utf8").match(/workslot:start/g) || []).length, 1);
 
   const fromSlot = await run(home, join(root, "st-1"), ["init", "--yes"]);
   assert.notEqual(fromSlot.status, 0);
   assert.match(fromSlot.stderr, /primary checkout/);
+});
+
+test("init keeps existing AGENTS.md text and refreshes the workslot section", async () => {
+  const home = homeDir();
+  const { repo } = makeRepo();
+  writeFileSync(join(repo, "AGENTS.md"), "# Project\n\nBe careful.\n");
+  const first = await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "1"]);
+  assert.equal(first.status, 0, first.stderr);
+  const widened = await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "2"]);
+  assert.equal(widened.status, 0, widened.stderr);
+  const agents = readFileSync(join(repo, "AGENTS.md"), "utf8");
+  assert.match(agents, /^# Project\n\nBe careful\./);
+  assert.match(agents, /`st-1`, `st-2`/);
+  assert.equal((agents.match(/workslot:start/g) || []).length, 1);
+  assert.equal((agents.match(/workslot:end/g) || []).length, 1);
+});
+
+test("init --no-agents leaves an existing AGENTS.md untouched", async () => {
+  const home = homeDir();
+  const { repo } = makeRepo();
+  writeFileSync(join(repo, "AGENTS.md"), "Be careful.\n");
+  const result = await run(home, repo, ["init", "--yes", "--no-agents", "--prefix", "st", "--count", "1"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /leave AGENTS.md and \.cursor\/rules\/workslot.mdc unchanged/);
+  assert.match(result.stdout, /agents: skipped/);
+  assert.equal(readFileSync(join(repo, "AGENTS.md"), "utf8"), "Be careful.\n");
+  assert.equal(existsSync(join(repo, ".cursor", "rules", "workslot.mdc")), false);
 });
 
 test("init refuses a prefix path that already exists", async () => {

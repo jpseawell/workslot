@@ -4,7 +4,7 @@ import { claim, dev, init, release, reset, status } from "./commands.js";
 
 const help = `workslot — permanent git worktree slots
 
-  workslot init [--prefix slot] [--count 3] [--base N] [--dev CMD] [--port-env PORT] [--yes]
+  workslot init [--prefix slot] [--count 3] [--base N] [--dev CMD] [--port-env PORT] [--yes] [--no-agents]
   workslot status [--json]
   workslot claim <branch> [--slot N]
   workslot release [n] [--token T] [--force]
@@ -34,7 +34,7 @@ function parseArgs(argv) {
       continue;
     }
     const key = arg.slice(2);
-    if (["yes", "force", "dry-run", "json", "help", "version"].includes(key)) {
+    if (["yes", "force", "dry-run", "json", "help", "version", "no-agents"].includes(key)) {
       flags[key] = true;
       continue;
     }

@@ -1,5 +1,7 @@
 # workslot
 
+Source: https://github.com/jpseawell/workslot
+
 Permanent git worktree slots for parallel local development. One primary checkout stays on the default branch. Tasks run in sibling worktrees (`slot-1`, `slot-2`, …) on fixed ports, with a lock so two sessions cannot take the same slot.
 
 Validation harnesses (smoke specs, auth proxies, device bridges) stay in the app repo. This tool only creates the slots, copies env files, and runs the dev server.
@@ -9,13 +11,13 @@ Validation harnesses (smoke specs, auth proxies, device bridges) stay in the app
 The package is not published yet. From the repo you want slots for:
 
 ```sh
-npx ~/Dev/workslot init
+npx ~/Dev/projects/workslot init
 ```
 
 Or install the command once:
 
 ```sh
-npm install -g ~/Dev/workslot
+npm install -g ~/Dev/projects/workslot
 workslot init
 ```
 
@@ -23,7 +25,7 @@ workslot init
 
 ```sh
 cd space-traveler
-npx ~/Dev/workslot init --prefix st --count 3
+npx ~/Dev/projects/workslot init --prefix st --count 3
 ```
 
 That prints the plan and asks before writing anything. `--yes` skips the prompt (required when stdin is not a terminal).
@@ -35,17 +37,19 @@ Workslot will create:
   ../st-2  port 4102
   ../st-3  port 4103
 It will copy untracked env files from the primary checkout into each new slot.
+It will add agent instructions to AGENTS.md and .cursor/rules/workslot.mdc.
 The primary checkout stays on main.
 Continue? [Y/n]
 ```
 
-| Flag | Default |
-| --- | --- |
+| Flag | Default | Meaning |
+| --- | --- | --- |
 | `--prefix` | `slot` | `slot-1`, or `st-1` when the prefix is `st` |
 | `--count` | `3` | how many worktrees to add (1–20) |
 | `--base` | next free hundred | `slot-1` listens on `base + 1` |
 | `--dev` | detected from the lockfile | shell command, usually `pnpm dev` |
 | `--port-env` | `PORT` | variable exported to that command |
+| `--no-agents` | off | leave `AGENTS.md` and `.cursor/rules/workslot.mdc` unchanged |
 
 Running `init` again is safe. It creates any missing slots and fills in env files that are not already there. It will not shrink the set, change the prefix, or move the port block.
 
@@ -74,6 +78,15 @@ workslot reset 1 --token <token> --yes
 From inside a slot, `dev`, `release`, and `reset` apply to that slot when you omit the number. They still require the claim token. `--dry-run` does not.
 
 `--force` overrides a missing or foreign token. It still will not discard uncommitted changes; that is `reset`.
+
+## Agent instructions
+
+`init` writes the slot rules into the primary checkout so agents claim a slot before editing.
+
+- `AGENTS.md` gets a section between `<!-- workslot:start -->` and `<!-- workslot:end -->`. Any other text in that file stays. Running `init` again replaces only that section.
+- `.cursor/rules/workslot.mdc` is the Cursor copy. Running `init` again replaces that file.
+
+`--no-agents` skips both. Commit the files on the default branch so they travel with the repo.
 
 ## Agent workflow
 

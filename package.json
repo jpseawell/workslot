@@ -17,5 +17,9 @@
   "scripts": {
     "test": "node --test"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jpseawell/workslot.git"
+  }
 }
