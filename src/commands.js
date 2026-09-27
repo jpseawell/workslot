@@ -508,15 +508,32 @@ function checkoutBranch(slotPath, branch, start) {
   const exists = git(slotPath, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], {
     allowFail: true,
   });
-  if (exists === null) git(slotPath, ["switch", "-c", branch, start]);
-  else git(slotPath, ["switch", branch]);
+  if (exists === null) {
+    git(slotPath, ["switch", "-c", branch, start]);
+    return true;
+  }
+  git(slotPath, ["switch", branch]);
+  return false;
+}
+
+function claimBase(primary, override) {
+  if (override) {
+    if (git(primary, ["rev-parse", "--verify", "--quiet", override], { allowFail: true }) === null) {
+      throw new WorkslotError(`Base ref not found: ${override}`, 2);
+    }
+    return override;
+  }
+  const current = git(primary, ["branch", "--show-current"]);
+  if (current) return current;
+  return resolveStart(primary);
 }
 
 export function claim(cwd, branch, flags) {
-  if (!branch) throw new WorkslotError("Usage: workslot claim <branch> [--slot N]", 2);
+  if (!branch) throw new WorkslotError("Usage: workslot claim <branch> [--slot N] [--base <ref>]", 2);
   const located = locate(cwd);
   const normalized = git(located.ctx.toplevel, ["check-ref-format", "--branch", branch]);
   const requested = flags.slot ? integer(flags.slot, "--slot", { min: 1, max: located.repo.count }) : null;
+  const start = claimBase(located.repo.primary, flags.base);
   tryFetch(located.repo.primary);
 
   const token = randomBytes(8).toString("hex");
@@ -544,14 +561,14 @@ export function claim(cwd, branch, flags) {
   if (!picked.info) {
     const lines = ["No open slot."];
     for (const info of picked.blocked) lines.push(`  ${info.name}: ${info.reason}`);
-    if (!requested) lines.push("Release a finished slot, or raise the count with: workslot init --count N --yes");
+    if (!requested) lines.push("Release a finished slot, or add one with: workslot add");
     throw new WorkslotError(lines.join("\n"));
   }
 
   const info = picked.info;
-  const start = resolveStart(located.repo.primary);
+  let created = false;
   try {
-    checkoutBranch(info.path, normalized, start);
+    created = checkoutBranch(info.path, normalized, start);
   } catch (err) {
     updateRegistry((registry) => {
       const repo = liveRepo(registry, located.repo.id);
@@ -564,10 +581,12 @@ export function claim(cwd, branch, flags) {
   console.log(`name: ${info.name}`);
   console.log(`path: ${info.path}`);
   console.log(`branch: ${normalized}`);
+  console.log(`base: ${start}`);
   console.log(`port: ${info.port}`);
   console.log(`url: ${info.url}`);
   console.log(`token: ${token}`);
-  console.error(`Claimed ${info.name} on ${normalized}.`);
+  console.error(`Claimed ${info.name} on ${normalized} from ${start}.`);
+  if (!created) console.error(`Checked out existing ${normalized}. It was not recreated from ${start}.`);
   console.error(`Do all edits and git commands in ${info.path}. The primary checkout stays on its current branch.`);
   console.error(`Dev server: workslot dev ${info.n} --token ${token}`);
   console.error(`Release: workslot release ${info.n} --token ${token}`);

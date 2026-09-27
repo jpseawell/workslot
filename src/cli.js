@@ -8,7 +8,7 @@ const help = `workslot — permanent git worktree slots
   workslot add [--yes] [--no-agents]
   workslot remove [n] [--yes] [--force] [--no-agents]
   workslot status [--json]
-  workslot claim <branch> [--slot N]
+  workslot claim <branch> [--slot N] [--base <ref>]
   workslot release [n] [--token T] [--force]
   workslot reset [n] [--token T] [--force] [--yes]
   workslot dev [n] [--token T] [--dry-run]

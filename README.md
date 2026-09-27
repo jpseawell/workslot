@@ -91,8 +91,8 @@ From inside a slot, `dev`, `release`, and `reset` apply to that slot when you om
 
 `init` writes the slot rules into the primary checkout so agents claim a slot before editing.
 
-- `AGENTS.md` gets a section between `<!-- workslot:start -->` and `<!-- workslot:end -->`. Any other text in that file stays. Running `init` again replaces only that section.
-- `.cursor/rules/workslot.mdc` is the Cursor copy. Running `init` again replaces that file.
+- `AGENTS.md` gets a section between `<!-- workslot:start -->` and `<!-- workslot:end -->`. Any other text in that file stays. `add` and `remove` replace only that section.
+- `.cursor/rules/workslot.mdc` is the Cursor copy. `add` and `remove` replace that file.
 
 `--no-agents` skips both. Commit the files on the default branch so they travel with the repo.
 
@@ -102,7 +102,10 @@ Start in the primary checkout, not in a slot. Ask the tool for a slot instead of
 
 ```sh
 workslot claim my-branch
+workslot claim my-branch --base v0.20.0
 ```
+
+The new branch starts from the primary checkout's current branch. `--base` overrides that.
 
 Stdout is the contract:
 
@@ -111,6 +114,7 @@ slot: 1
 name: st-1
 path: /Users/you/Dev/st-1
 branch: my-branch
+base: v0.20.0
 port: 4101
 url: http://localhost:4101
 token: …

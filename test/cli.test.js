@@ -233,6 +233,7 @@ test("claim locks the first open slot and a second claim takes the next one", as
   assert.equal(field(first.stdout, "slot"), "1");
   assert.equal(realpathSync(field(first.stdout, "path")), realpathSync(join(root, "st-1")));
   assert.equal(branch(join(root, "st-1")), "feature-a");
+  assert.equal(field(first.stdout, "base"), "main");
   assert.equal(branch(repo), "main");
   const token = field(first.stdout, "token");
 
@@ -279,6 +280,36 @@ test("claim locks the first open slot and a second claim takes the next one", as
     execFileSync("git", ["branch", "--list", "feature-a"], { cwd: repo, encoding: "utf8" }),
     /feature-a/,
   );
+});
+
+test("claim starts from the primary checkout's current branch", async () => {
+  const home = homeDir();
+  const { root, repo } = makeRepo();
+  assert.equal((await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "2", "--no-agents"])).status, 0);
+  const git = (args, cwd = repo) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  git(["switch", "-c", "v0.20.0"]);
+  writeFileSync(join(repo, "release.txt"), "release\n");
+  git(["add", "release.txt"]);
+  git(["commit", "-m", "release"]);
+  const releaseTip = git(["rev-parse", "HEAD"]);
+  const mainTip = git(["rev-parse", "main"]);
+
+  const fromCurrent = await run(home, repo, ["claim", "feature-from-release"]);
+  assert.equal(fromCurrent.status, 0, fromCurrent.stderr);
+  assert.equal(field(fromCurrent.stdout, "base"), "v0.20.0");
+  assert.equal(git(["rev-parse", "HEAD"], field(fromCurrent.stdout, "path")), releaseTip);
+  assert.equal(git(["branch", "--show-current"]), "v0.20.0");
+
+  const fromMain = await run(home, repo, ["claim", "feature-from-main", "--base", "main"]);
+  assert.equal(fromMain.status, 0, fromMain.stderr);
+  assert.equal(field(fromMain.stdout, "base"), "main");
+  assert.equal(git(["rev-parse", "HEAD"], field(fromMain.stdout, "path")), mainTip);
+  assert.notEqual(releaseTip, mainTip);
+
+  const missing = await run(home, repo, ["claim", "feature-missing", "--base", "no-such-ref"]);
+  assert.equal(missing.status, 2);
+  assert.match(missing.stderr, /Base ref not found/);
+  assert.equal(existsSync(join(root, "st-3")), false);
 });
 
 test("parallel claims take different slots", async () => {

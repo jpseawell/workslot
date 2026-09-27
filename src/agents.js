@@ -13,9 +13,9 @@ export function agentInstructions(plan) {
 
 This repo uses permanent git worktree slots for parallel work. Follow these steps even when the session started in the primary checkout.
 
-The primary checkout stays on \`${plan.defaultBranch}\`. Create branches, commits, and file edits in a slot.
+The primary checkout keeps its current branch. Create branches, commits, and file edits in a slot.
 
-1. From the primary checkout, run \`workslot claim <branch>\` before editing.
+1. From the primary checkout, run \`workslot claim <branch>\` before editing. The new branch starts from that current branch. Pass \`--base <ref>\` to start from a different commit.
 2. Do every file edit and git command in the printed \`path\`.
 3. Keep the printed \`token\`. Pass it as \`--token\` or \`WORKSLOT_TOKEN\`.
 
