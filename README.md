@@ -25,33 +25,41 @@ workslot init
 
 ```sh
 cd space-traveler
-npx ~/Dev/projects/workslot init --prefix st --count 3
+npx ~/Dev/projects/workslot init --prefix st
 ```
 
-That prints the plan and asks before writing anything. `--yes` skips the prompt (required when stdin is not a terminal).
+That creates two slots the first time. It prints the plan and asks before writing anything. `--yes` skips the prompt. `--count` sets the starting number, and only on that first run.
 
 ```
 Workslot will create:
   ~/.workslot/ registry entry (ports 4100–4199)
   ../st-1  port 4101
   ../st-2  port 4102
-  ../st-3  port 4103
 It will copy untracked env files from the primary checkout into each new slot.
 It will add agent instructions to AGENTS.md and .cursor/rules/workslot.mdc.
 The primary checkout stays on main.
 Continue? [Y/n]
 ```
 
+Running `init` again does nothing and tells you to use `add` or `remove`.
+
+```sh
+workslot add --yes
+workslot remove --yes
+```
+
+`add` creates the next slot, such as `st-3`. `remove` deletes the last slot. It will not delete an earlier one, so those ports stay put. It also will not delete the final remaining slot. `--force` is required when that slot is dirty, claimed, or serving.
+
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--prefix` | `slot` | `slot-1`, or `st-1` when the prefix is `st` |
-| `--count` | `3` | how many worktrees to add (1–20) |
+| `--count` | `2` | slots to create on the first `init` (1–20) |
 | `--base` | next free hundred | `slot-1` listens on `base + 1` |
 | `--dev` | detected from the lockfile | shell command, usually `pnpm dev` |
 | `--port-env` | `PORT` | variable exported to that command |
 | `--no-agents` | off | leave `AGENTS.md` and `.cursor/rules/workslot.mdc` unchanged |
 
-Running `init` again is safe. It creates any missing slots and fills in env files that are not already there. It will not shrink the set, change the prefix, or move the port block.
+`init` will not grow, shrink, or reconfigure a repo that already has slots. Use `add` and `remove` for that.
 
 Untracked root env files (`.env`, `.env.local`, `.env.uat`, …) are copied from the primary checkout. Tracked files such as `.env.example` are already in the worktree. A later `init` does not overwrite an env file the slot already has.
 

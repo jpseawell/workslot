@@ -162,7 +162,7 @@ function buildPlan(cwd, flags) {
   const id = repoId(ctx.commonDir);
   const existing = registry.repos[id] ?? null;
   const prefix = flags.prefix ?? existing?.prefix ?? "slot";
-  const count = flags.count !== undefined ? integer(flags.count, "--count", { min: 1, max: 20 }) : (existing?.count ?? 3);
+  const count = flags.count !== undefined ? integer(flags.count, "--count", { min: 1, max: 20 }) : (existing?.count ?? 2);
   const devCommand = flags.dev ?? existing?.devCommand ?? detectDevCommand(ctx.toplevel);
   const portEnv = flags["port-env"] ?? existing?.portEnv ?? "PORT";
   validatePrefix(prefix);
@@ -190,12 +190,6 @@ function buildPlan(cwd, flags) {
       `This repo already uses port base ${existing.base}. Slot ports stay fixed once created.`,
     );
   }
-  if (existing && count < existing.count) {
-    throw new WorkslotError(
-      `Refusing to drop slots ${count + 1}–${existing.count}. Remove them with git worktree remove if you mean to.`,
-    );
-  }
-
   const defaultBranch = detectDefaultBranch(ctx.toplevel);
   const slots = [];
   const trees = new Set(worktreePaths(ctx.toplevel));
@@ -235,8 +229,53 @@ function slotPathOf(primary, prefix, n) {
   return join(dirname(primary), `${prefix}-${n}`);
 }
 
+function requirePrimary(located, command) {
+  if (!located.ctx.isPrimary) {
+    throw new WorkslotError(`Run workslot ${command} from the primary checkout, not from a slot.`);
+  }
+}
+
+function planFromRepo(repo) {
+  const slots = [];
+  for (let n = 1; n <= repo.count; n += 1) {
+    slots.push({
+      n,
+      name: `${repo.prefix}-${n}`,
+      path: slotPathOf(repo.primary, repo.prefix, n),
+      port: repo.base + n,
+    });
+  }
+  return {
+    slots,
+    count: repo.count,
+    prefix: repo.prefix,
+    defaultBranch: repo.defaultBranch,
+    devCommand: repo.devCommand,
+    portEnv: repo.portEnv,
+  };
+}
+
+function reportAgents(repo, flags) {
+  if (flags["no-agents"]) {
+    console.log("agents: skipped");
+    return;
+  }
+  const agents = installAgentInstructions(repo.primary, planFromRepo(repo));
+  const state = agents.changed ? "updated" : "unchanged";
+  console.log(`agents: ${state} ${agents.agentsPath}`);
+  console.log(`agents: ${state} ${agents.rulePath}`);
+}
+
 export async function init(cwd, flags) {
   const plan = buildPlan(cwd, flags);
+  if (plan.existing) {
+    const names = Array.from({ length: plan.existing.count }, (_, index) => `${plan.existing.prefix}-${index + 1}`);
+    throw new WorkslotError(
+      `This repo already has ${plan.existing.count} ${plan.existing.count === 1 ? "slot" : "slots"}: ${names.join(", ")}.\n` +
+      "Add one: workslot add\n" +
+      "Remove the last: workslot remove",
+    );
+  }
   const preview = planLines(plan).join("\n");
   console.log(preview);
   if (!flags.yes) {
@@ -290,6 +329,109 @@ export async function init(cwd, flags) {
     console.log("agents: skipped");
   }
   console.error("Claim a slot from this checkout with: workslot claim <branch>");
+}
+
+export async function add(cwd, flags) {
+  const located = locate(cwd);
+  requirePrimary(located, "add");
+  if (located.repo.count >= 20) {
+    throw new WorkslotError("Refusing to add a 21st slot.");
+  }
+  const n = located.repo.count + 1;
+  const path = slotPathOf(located.repo.primary, located.repo.prefix, n);
+  const port = located.repo.base + n;
+  const name = `${located.repo.prefix}-${n}`;
+  const trees = new Set(worktreePaths(located.repo.primary));
+  if (existsSync(path) && !trees.has(canonical(path))) {
+    throw new WorkslotError(`${path} already exists and is not a worktree of this repo.`);
+  }
+  if (trees.has(canonical(path))) {
+    throw new WorkslotError(`${name} already exists.`);
+  }
+  const lines = [
+    "Workslot will create:",
+    `  ${path}  port ${port}`,
+    "It will copy untracked env files from the primary checkout.",
+    flags["no-agents"]
+      ? "It will leave AGENTS.md and .cursor/rules/workslot.mdc unchanged."
+      : "It will update AGENTS.md and .cursor/rules/workslot.mdc.",
+  ];
+  console.log(lines.join("\n"));
+  if (!flags.yes) {
+    const accepted = await confirm("Continue? [Y/n] ", true);
+    if (accepted === null) requireYes(flags, "Add was not confirmed.");
+    if (accepted === false) throw new WorkslotError("Aborted.", 2);
+  }
+
+  updateRegistry((registry) => {
+    liveRepo(registry, located.repo.id).count = n;
+  });
+  try {
+    const start = resolveStart(located.repo.primary);
+    git(located.repo.primary, ["worktree", "add", "--detach", path, start]);
+    const copied = copyEnvFiles(located.repo.primary, path);
+    console.log(`added: ${n}`);
+    console.log(`name: ${name}`);
+    console.log(`path: ${path}`);
+    console.log(`port: ${port}`);
+    console.log(`copied env: ${copied.length ? copied.join(", ") : "none"}`);
+    const repo = { ...located.repo, count: n };
+    reportAgents(repo, flags);
+  } catch (err) {
+    updateRegistry((registry) => {
+      const repo = liveRepo(registry, located.repo.id);
+      if (repo.count === n) repo.count = n - 1;
+    });
+    throw err;
+  }
+}
+
+export async function remove(cwd, slotArg, flags) {
+  const located = locate(cwd);
+  requirePrimary(located, "remove");
+  const last = located.repo.count;
+  if (last <= 1) {
+    throw new WorkslotError("Refusing to remove the last slot.");
+  }
+  const n = slotArg === undefined ? last : integer(slotArg, "slot", { min: 1, max: last });
+  if (n !== last) {
+    throw new WorkslotError(
+      `Only the last slot can be removed, so earlier ports stay put. Run: workslot remove ${last}`,
+    );
+  }
+  const trees = new Set(worktreePaths(located.repo.primary));
+  const info = inspectSlot(located.repo, n, trees);
+  const name = `${located.repo.prefix}-${n}`;
+  if (info.reason === "missing" || info.reason.startsWith("path exists")) {
+    throw new WorkslotError(`${name}: ${info.reason}`);
+  }
+  if (info.server && !flags.force) {
+    throw new WorkslotError(`${name} has a server on port ${info.port}. Stop it, or re-run with --force.`);
+  }
+  if (info.dirty && !flags.force) {
+    throw new WorkslotError(`${name} has uncommitted changes. Commit them, or re-run with --force --yes to delete the worktree.`);
+  }
+  if (info.lock && !flags.force) {
+    throw new WorkslotError(`${name} is claimed by ${info.lock.holder} for ${info.lock.branch}. Release it, or re-run with --force.`);
+  }
+  console.log(`Remove ${name} at ${info.path}?`);
+  console.log("This deletes that worktree. Branches already committed are kept.");
+  if (!flags.yes) {
+    const accepted = await confirm("Continue? [y/N] ", false);
+    if (accepted === null) requireYes(flags, "Remove was not confirmed.");
+    if (!accepted) throw new WorkslotError("Aborted.", 2);
+  }
+  if (info.server) killPort(info.port);
+  git(located.repo.primary, ["worktree", "remove", "--force", info.path]);
+  updateRegistry((registry) => {
+    const repo = liveRepo(registry, located.repo.id);
+    repo.count = n - 1;
+    if (repo.slots) delete repo.slots[String(n)];
+  });
+  console.log(`removed: ${n}`);
+  console.log(`name: ${name}`);
+  console.log(`path: ${info.path}`);
+  reportAgents({ ...located.repo, count: n - 1 }, flags);
 }
 
 function formatStatus(located) {

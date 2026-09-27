@@ -107,11 +107,11 @@ test("init creates sibling slots, copies env files, and leaves primary on main",
   });
   assert.doesNotMatch(slotStatus, /AGENTS\.md/);
 
-  const again = await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "2"]);
-  assert.equal(again.status, 0, again.stderr);
-  assert.match(again.stdout, /created: 0/);
-  assert.match(again.stdout, /copied env: none/);
-  assert.match(again.stdout, /agents: unchanged/);
+  const again = await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "4"]);
+  assert.notEqual(again.status, 0);
+  assert.match(again.stderr, /workslot add/);
+  assert.match(again.stderr, /workslot remove/);
+  assert.equal(existsSync(join(root, "st-3")), false);
   assert.equal((readFileSync(join(repo, "AGENTS.md"), "utf8").match(/workslot:start/g) || []).length, 1);
 
   const fromSlot = await run(home, join(root, "st-1"), ["init", "--yes"]);
@@ -125,7 +125,7 @@ test("init keeps existing AGENTS.md text and refreshes the workslot section", as
   writeFileSync(join(repo, "AGENTS.md"), "# Project\n\nBe careful.\n");
   const first = await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "1"]);
   assert.equal(first.status, 0, first.stderr);
-  const widened = await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "2"]);
+  const widened = await run(home, repo, ["add", "--yes"]);
   assert.equal(widened.status, 0, widened.stderr);
   const agents = readFileSync(join(repo, "AGENTS.md"), "utf8");
   assert.match(agents, /^# Project\n\nBe careful\./);
@@ -144,6 +144,52 @@ test("init --no-agents leaves an existing AGENTS.md untouched", async () => {
   assert.match(result.stdout, /agents: skipped/);
   assert.equal(readFileSync(join(repo, "AGENTS.md"), "utf8"), "Be careful.\n");
   assert.equal(existsSync(join(repo, ".cursor", "rules", "workslot.mdc")), false);
+});
+
+test("init creates two slots unless --count says otherwise", async () => {
+  const home = homeDir();
+  const { root, repo } = makeRepo();
+  const result = await run(home, repo, ["init", "--yes", "--prefix", "st", "--no-agents"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(join(root, "st-1")), true);
+  assert.equal(existsSync(join(root, "st-2")), true);
+  assert.equal(existsSync(join(root, "st-3")), false);
+});
+
+test("add creates the next slot and remove deletes only the last one", async () => {
+  const home = homeDir();
+  const { root, repo } = makeRepo();
+  assert.equal((await run(home, repo, ["init", "--yes", "--prefix", "st", "--count", "2"])).status, 0);
+  const added = await run(home, repo, ["add", "--yes"]);
+  assert.equal(added.status, 0, added.stderr);
+  assert.equal(existsSync(join(root, "st-3")), true);
+  assert.equal(readFileSync(join(root, "st-3", ".env"), "utf8"), "SECRET=1\n");
+  assert.match(readFileSync(join(repo, "AGENTS.md"), "utf8"), /`st-1`, `st-2`, `st-3`/);
+
+  writeFileSync(join(root, "st-3", "scratch.txt"), "x\n");
+  const dirty = await run(home, repo, ["remove", "--yes"]);
+  assert.notEqual(dirty.status, 0);
+  assert.match(dirty.stderr, /uncommitted/);
+  assert.equal(existsSync(join(root, "st-3")), true);
+
+  const middle = await run(home, repo, ["remove", "1", "--yes"]);
+  assert.notEqual(middle.status, 0);
+  assert.match(middle.stderr, /workslot remove 3/);
+
+  const removed = await run(home, repo, ["remove", "--force", "--yes"]);
+  assert.equal(removed.status, 0, removed.stderr);
+  assert.equal(existsSync(join(root, "st-3")), false);
+  assert.equal(existsSync(join(root, "st-1")), true);
+  assert.match(readFileSync(join(repo, "AGENTS.md"), "utf8"), /`st-1`, `st-2`/);
+  assert.doesNotMatch(readFileSync(join(repo, "AGENTS.md"), "utf8"), /`st-3`/);
+
+  const home2 = homeDir();
+  const second = makeRepo();
+  assert.equal((await run(home2, second.repo, ["init", "--yes", "--prefix", "only", "--count", "1", "--no-agents"])).status, 0);
+  const last = await run(home2, second.repo, ["remove", "--yes"]);
+  assert.notEqual(last.status, 0);
+  assert.match(last.stderr, /last slot/);
+  assert.equal(existsSync(join(second.root, "only-1")), true);
 });
 
 test("init refuses a prefix path that already exists", async () => {

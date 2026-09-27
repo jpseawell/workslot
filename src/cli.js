@@ -1,15 +1,19 @@
 import { readFileSync } from "node:fs";
 import { WorkslotError } from "./errors.js";
-import { claim, dev, init, release, reset, status } from "./commands.js";
+import { add, claim, dev, init, release, remove, reset, status } from "./commands.js";
 
 const help = `workslot — permanent git worktree slots
 
-  workslot init [--prefix slot] [--count 3] [--base N] [--dev CMD] [--port-env PORT] [--yes] [--no-agents]
+  workslot init [--prefix slot] [--count 2] [--base N] [--dev CMD] [--port-env PORT] [--yes] [--no-agents]
+  workslot add [--yes] [--no-agents]
+  workslot remove [n] [--yes] [--force] [--no-agents]
   workslot status [--json]
   workslot claim <branch> [--slot N]
   workslot release [n] [--token T] [--force]
   workslot reset [n] [--token T] [--force] [--yes]
   workslot dev [n] [--token T] [--dry-run]
+
+init creates the slots once. Add another with add. Remove the last with remove.
 
 Slots are sibling directories of the primary checkout (../slot-1 by default).
 The primary checkout stays on the default branch. Each repo on this machine
@@ -72,6 +76,14 @@ export async function main(argv) {
     case "init":
       if (rest.length) throw new WorkslotError("workslot init takes no positional arguments", 2);
       await init(process.cwd(), flags);
+      return 0;
+    case "add":
+      if (rest.length) throw new WorkslotError("workslot add takes no positional arguments", 2);
+      await add(process.cwd(), flags);
+      return 0;
+    case "remove":
+      if (rest.length > 1) throw new WorkslotError("Usage: workslot remove [n]", 2);
+      await remove(process.cwd(), rest[0], flags);
       return 0;
     case "status":
       if (rest.length) throw new WorkslotError("workslot status takes no positional arguments", 2);
